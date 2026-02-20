@@ -241,6 +241,13 @@
     const JUMP_FORCE = -13.5;
     const GRAVITY = 0.62;
 
+    // ── Bike rhythm (fase 2) ──────────────────────────────────────
+    let bikeSpeed = 5, beatFrame = 0;
+    const BEAT_INTERVAL = 48;
+    let tapResult = '', tapResultTimer = 0;
+    // ── Run double jump (fase 3) ──────────────────────────────────
+    let jumpCount = 0;
+
     // ============================================================
     //  RECURSOS
     // ============================================================
@@ -276,8 +283,8 @@
         cleared = 0;
         frame = 0;
         spawnTimer = 0;
-        spawnInterval = 110;
-        playerY = PLAYER_GROUND;
+        spawnInterval = (p.style === 'water') ? 160 : 110;
+        playerY = (p.style === 'water') ? H / 2 - SPRITE_SIZE / 2 : PLAYER_GROUND;
         playerVY = 0;
         isJumping = false;
         isHurt = false;
@@ -285,6 +292,8 @@
         lives = 3;
         catX = -200; catActive = false; catSpawnTimer = 0;
         catShield = false; catShieldTimer = 0; catMsgTimer = 0;
+        bikeSpeed = 5; beatFrame = 0; tapResult = ''; tapResultTimer = 0;
+        jumpCount = 0;
     }
 
     function makeBgDecos(style) {
@@ -309,6 +318,7 @@
     const ctx = canvas.getContext('2d');
 
     function drawBg(p) {
+        if (p.style === 'water') { drawSwimBg(); return; }
         // Sky
         const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
         grad.addColorStop(0, p.bgTop);
@@ -353,6 +363,58 @@
             ctx.beginPath();
             ctx.arc(d.x, d.y, d.size * 0.3, 0, Math.PI * 2);
             ctx.fill();
+        });
+    }
+
+    function drawSwimBg() {
+        // Gradiente full-screen água
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#0096c7');
+        grad.addColorStop(0.5, '#0077b6');
+        grad.addColorStop(1, '#03045e');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+
+        // Raios de luz do topo
+        ctx.save();
+        for (let i = 0; i < 5; i++) {
+            const rx = 80 + i * 160;
+            const alpha = 0.05 + Math.sin(frame * 0.012 + i * 1.2) * 0.03;
+            ctx.fillStyle = `rgba(144,224,239,${alpha})`;
+            ctx.beginPath();
+            ctx.moveTo(rx - 15, 0);
+            ctx.lineTo(rx + 15, 0);
+            ctx.lineTo(rx + 90, H);
+            ctx.lineTo(rx - 90, H);
+            ctx.closePath();
+            ctx.fill();
+        }
+        ctx.restore();
+
+        // Linhas de onda
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 2;
+        for (let row = 0; row < 7; row++) {
+            const baseY = 40 + row * 55;
+            const offset = (frame * 1.4 + row * 38) % W;
+            ctx.beginPath();
+            for (let x = -offset; x < W + 40; x += 40) {
+                ctx.moveTo(x, baseY);
+                ctx.quadraticCurveTo(x + 10, baseY - 5, x + 20, baseY);
+                ctx.quadraticCurveTo(x + 30, baseY + 5, x + 40, baseY);
+            }
+            ctx.stroke();
+        }
+
+        // Bolhas subindo
+        bgDecos.forEach((d, idx) => {
+            const by = ((d.y - frame * d.speed * 0.5) % H + H) % H;
+            const alpha = 0.18 + Math.sin(frame * 0.05 + idx) * 0.1;
+            ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(d.x, by, d.size * 0.28, 0, Math.PI * 2);
+            ctx.stroke();
         });
     }
 
@@ -445,11 +507,22 @@
             ctx.globalAlpha = 1;
         }
 
-        // Shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        ctx.beginPath();
-        ctx.ellipse(x + SPRITE_SIZE / 2, GROUND_Y + 2, 24, 6, 0, 0, Math.PI * 2);
-        ctx.fill();
+        // Shadow (não para swim)
+        const _ph = CONFIG.phases[phaseIdx];
+        if (_ph.style !== 'water') {
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath();
+            ctx.ellipse(x + SPRITE_SIZE / 2, GROUND_Y + 2, 24, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Indicador de duplo pulo disponível (run)
+        if (_ph.style === 'park' && isJumping && jumpCount === 1) {
+            ctx.fillStyle = 'rgba(255,214,10,0.92)';
+            ctx.font = 'bold 12px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText('x2', x + SPRITE_SIZE / 2, playerY - 8);
+            ctx.textAlign = 'left';
+        }
     }
 
     // ============================================================
@@ -492,6 +565,36 @@
             ctx.fillRect(x + w * 0.74, y, w * 0.18, h);
             ctx.fillStyle = p.obstacleSecondary;
             ctx.fillRect(x, y + h * 0.5, w, h * 0.11);
+        }
+    }
+
+    function drawSwimObstacle(obs) {
+        const x = obs.x, w = obs.w;
+        const gapY = obs.gapY, gapSize = obs.gapSize;
+
+        // Pipe top (parede de recife)
+        ctx.fillStyle = '#023e8a';
+        ctx.fillRect(x, 0, w, gapY);
+        ctx.fillStyle = '#0096c7';
+        ctx.fillRect(x - 4, gapY - 14, w + 8, 14);
+
+        // Pipe bottom
+        const botY = gapY + gapSize;
+        ctx.fillStyle = '#023e8a';
+        ctx.fillRect(x, botY, w, H - botY);
+        ctx.fillStyle = '#0096c7';
+        ctx.fillRect(x - 4, botY, w + 8, 14);
+
+        // Corais decorativos nas bordas
+        ctx.fillStyle = 'rgba(255,107,53,0.65)';
+        for (let ci = 0; ci < 3; ci++) {
+            const cx = x + 7 + ci * 16;
+            ctx.beginPath();
+            ctx.arc(cx, gapY - 7, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx, botY + 7, 4, 0, Math.PI * 2);
+            ctx.fill();
         }
     }
 
@@ -540,6 +643,95 @@
             ctx.fillText('João Carlos te ajudou! 🐈‍⬛', W / 2, H / 2 - 20);
         }
 
+        ctx.textAlign = 'left';
+    }
+
+    // ============================================================
+    //  BIKE RHYTHM FUNCTIONS
+    // ============================================================
+    function updateBikePhase() {
+        beatFrame++;
+        bikeSpeed -= 0.025;
+        if (bikeSpeed < 0) bikeSpeed = 0;
+        if (tapResultTimer > 0) tapResultTimer--;
+    }
+
+    function handleBikeTap() {
+        const pos = beatFrame % BEAT_INTERVAL;
+        const dist = Math.min(pos, BEAT_INTERVAL - pos);
+        if (dist <= 12) {
+            bikeSpeed = Math.min(bikeSpeed + 2, 10);
+            tapResult = 'PERFECT! ⚡';
+            tapResultTimer = 70;
+        } else {
+            bikeSpeed = Math.max(bikeSpeed - 1, 0);
+            tapResult = 'MISS!';
+            tapResultTimer = 70;
+        }
+    }
+
+    function drawBikeHUD() {
+        // Painel de fundo
+        ctx.fillStyle = 'rgba(0,0,0,0.62)';
+        ctx.fillRect(10, H - 66, 230, 60);
+
+        // POWER label
+        ctx.font = '7px "Press Start 2P"';
+        ctx.fillStyle = '#ffd60a';
+        ctx.textAlign = 'left';
+        ctx.fillText('POWER', 18, H - 49);
+
+        // Barra de power
+        const gX = 18, gY = H - 42, gW = 210, gH = 12;
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillRect(gX, gY, gW, gH);
+        const pct = bikeSpeed / 10;
+        ctx.fillStyle = pct > 0.5 ? '#52b788' : pct > 0.35 ? '#ffd60a' : '#e63946';
+        ctx.fillRect(gX, gY, gW * pct, gH);
+        // Linha de perigo (40%)
+        ctx.strokeStyle = '#e63946';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(gX + gW * 0.4, gY - 2);
+        ctx.lineTo(gX + gW * 0.4, gY + gH + 2);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(gX, gY, gW, gH);
+
+        // BEAT label
+        ctx.font = '7px "Press Start 2P"';
+        ctx.fillStyle = '#90e0ef';
+        ctx.fillText('BEAT', 18, H - 23);
+
+        // Barra de ritmo
+        const bX = 18, bY = H - 18, bW = 210, bH = 11;
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect(bX, bY, bW, bH);
+        // Zonas verdes (perfeito) nas duas bordas
+        const zW = bW * (12 / BEAT_INTERVAL);
+        ctx.fillStyle = 'rgba(82,183,136,0.6)';
+        ctx.fillRect(bX, bY, zW, bH);
+        ctx.fillRect(bX + bW - zW, bY, zW, bH);
+        // Cursor
+        const cPct = (beatFrame % BEAT_INTERVAL) / BEAT_INTERVAL;
+        const cX = bX + bW * cPct;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(cX - 2, bY - 2, 4, bH + 4);
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bX, bY, bW, bH);
+
+        // Feedback PERFECT / MISS
+        if (tapResultTimer > 0) {
+            const alpha = Math.min(tapResultTimer / 70, 1);
+            ctx.fillStyle = tapResult.includes('PERFECT')
+                ? `rgba(82,183,136,${alpha})`
+                : `rgba(230,57,70,${alpha})`;
+            ctx.font = '14px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText(tapResult, W / 2, H / 2 - 30);
+        }
         ctx.textAlign = 'left';
     }
 
@@ -649,10 +841,20 @@
         ctx.font = '7px "Press Start 2P"';
         ctx.fillText(p.raceDate + '  ·  ' + p.raceType, W / 2, 342);
 
+        // Dica da mecânica específica da fase
+        const mechHints = [
+            'TAP p/ nadar para CIMA!',
+            'TAP NO VERDE = velocidade!',
+            'ESPACO 2x = DUPLO PULO!'
+        ];
+        ctx.fillStyle = '#52b788';
+        ctx.font = '8px "Press Start 2P"';
+        ctx.fillText(mechHints[phaseIdx] || '', W / 2, 352);
+
         if (Math.floor(frame / 26) % 2 === 0) {
-            ctx.fillStyle = 'rgba(255,255,255,0.7)';
-            ctx.font = '9px "Press Start 2P"';
-            ctx.fillText('Clique ou Espaço para começar!', W / 2, 365);
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.font = '8px "Press Start 2P"';
+            ctx.fillText('Clique ou Espaco para comecar!', W / 2, 376);
         }
         ctx.textAlign = 'left';
     }
@@ -691,13 +893,42 @@
     //  LÓGICA DE JOGO
     // ============================================================
     function updatePlayer() {
-        if (isJumping) {
-            playerVY += GRAVITY;
+        const p = CONFIG.phases[phaseIdx];
+        if (p.style === 'water') {
+            // Física aquática: gravidade suave, tap empurra para cima
+            playerVY += 0.30;
             playerY += playerVY;
-            if (playerY >= PLAYER_GROUND) {
-                playerY = PLAYER_GROUND;
+            // Bounce no topo
+            if (playerY < 0) {
+                playerY = 0;
+                playerVY = Math.abs(playerVY) * 0.4;
+            }
+            // Bater no fundo = perder vida
+            if (!isHurt && !catShield && playerY + SPRITE_SIZE > H - 4) {
+                playerY = H - SPRITE_SIZE - 4;
                 playerVY = 0;
-                isJumping = false;
+                isHurt = true; hurtTimer = 55;
+                lives--;
+                playSound('hit');
+                if (lives <= 0) { resetPhase(); return; }
+            }
+            playerY = Math.min(playerY, H - SPRITE_SIZE - 4);
+        } else if (p.style === 'road') {
+            // Bike: Jolteon fica no chão
+            playerY = PLAYER_GROUND;
+            playerVY = 0;
+            isJumping = false;
+        } else {
+            // Run: pulo normal + duplo pulo
+            if (isJumping) {
+                playerVY += GRAVITY;
+                playerY += playerVY;
+                if (playerY >= PLAYER_GROUND) {
+                    playerY = PLAYER_GROUND;
+                    playerVY = 0;
+                    isJumping = false;
+                    jumpCount = 0;
+                }
             }
         }
         if (isHurt) {
@@ -707,29 +938,68 @@
     }
 
     function spawnObstacle() {
-        obstacles.push({ x: W + 10, y: OBS_Y, w: OBS_W, h: OBS_H, speed });
+        const p = CONFIG.phases[phaseIdx];
+        if (p.style === 'water') {
+            const gapSize = 155;
+            const gapY = Math.floor(Math.random() * (H - gapSize - 60)) + 30;
+            obstacles.push({ x: W + 10, gapY, gapSize, w: 52, speed });
+        } else if (p.style === 'park') {
+            const tall = Math.random() < 0.35;
+            const h = tall ? 100 : OBS_H;
+            obstacles.push({ x: W + 10, y: GROUND_Y - h, w: OBS_W, h, speed });
+        } else {
+            obstacles.push({ x: W + 10, y: OBS_Y, w: OBS_W, h: OBS_H, speed });
+        }
     }
 
     function updateObstacles() {
+        const p = CONFIG.phases[phaseIdx];
         for (let i = obstacles.length - 1; i >= 0; i--) {
             const obs = obstacles[i];
             obs.x -= obs.speed;
 
-            // Collision (tight hitbox)
-            if (
-                !isHurt && !catShield &&
-                100 + 10 < obs.x + obs.w - 6 &&
-                100 + SPRITE_SIZE - 10 > obs.x + 6 &&
-                playerY + 10 < obs.y + obs.h - 6 &&
-                playerY + SPRITE_SIZE - 6 > obs.y + 6
-            ) {
-                isHurt = true;
-                hurtTimer = 40;
-                playSound('hit');
-                lives--;
-                obstacles.splice(i, 1);
-                if (lives <= 0) { resetPhase(); return; }
-                continue;
+            if (!isHurt && !catShield) {
+                if (p.style === 'water') {
+                    // Swim: detecta se player saiu do gap
+                    if (100 + SPRITE_SIZE - 10 > obs.x + 4 && 100 + 10 < obs.x + obs.w - 4) {
+                        if (playerY + 10 < obs.gapY || playerY + SPRITE_SIZE - 10 > obs.gapY + obs.gapSize) {
+                            isHurt = true; hurtTimer = 55;
+                            lives--;
+                            playSound('hit');
+                            if (lives <= 0) { resetPhase(); return; }
+                        }
+                    }
+                } else if (p.style === 'road') {
+                    // Bike: só colide se bikeSpeed < 4
+                    if (bikeSpeed < 4 &&
+                        100 + 10 < obs.x + obs.w - 6 &&
+                        100 + SPRITE_SIZE - 10 > obs.x + 6 &&
+                        PLAYER_GROUND + 10 < obs.y + obs.h - 6 &&
+                        PLAYER_GROUND + SPRITE_SIZE - 6 > obs.y + 6
+                    ) {
+                        isHurt = true; hurtTimer = 40;
+                        lives--;
+                        playSound('hit');
+                        obstacles.splice(i, 1);
+                        if (lives <= 0) { resetPhase(); return; }
+                        continue;
+                    }
+                } else {
+                    // Run: colisão normal
+                    if (
+                        100 + 10 < obs.x + obs.w - 6 &&
+                        100 + SPRITE_SIZE - 10 > obs.x + 6 &&
+                        playerY + 10 < obs.y + obs.h - 6 &&
+                        playerY + SPRITE_SIZE - 6 > obs.y + 6
+                    ) {
+                        isHurt = true; hurtTimer = 40;
+                        lives--;
+                        playSound('hit');
+                        obstacles.splice(i, 1);
+                        if (lives <= 0) { resetPhase(); return; }
+                        continue;
+                    }
+                }
             }
 
             if (obs.x + obs.w < 0) {
@@ -743,19 +1013,21 @@
     }
 
     function resetPhase() {
-        // Blink and restart phase
+        const p = CONFIG.phases[phaseIdx];
         lives = 3;
         cleared = 0;
         obstacles = [];
-        playerY = PLAYER_GROUND;
+        playerY = (p.style === 'water') ? H / 2 - SPRITE_SIZE / 2 : PLAYER_GROUND;
         playerVY = 0;
         isJumping = false;
         isHurt = false;
         hurtTimer = 0;
         spawnTimer = 0;
-        spawnInterval = 110;
-        speed = CONFIG.phases[phaseIdx].baseSpeed;
+        spawnInterval = (p.style === 'water') ? 160 : 110;
+        speed = p.baseSpeed;
         frame = 0;
+        bikeSpeed = 5; beatFrame = 0; tapResult = ''; tapResultTimer = 0;
+        jumpCount = 0;
     }
 
     function completePhase() {
@@ -821,10 +1093,23 @@
             state = STATE.PLAYING;
             frame = 0;
         } else if (state === STATE.PLAYING) {
-            if (!isJumping) {
-                playerVY = JUMP_FORCE;
-                isJumping = true;
+            const ph = CONFIG.phases[phaseIdx];
+            if (ph.style === 'water') {
+                // Swim: empurrar para cima
+                playerVY = -8;
                 playSound('jump');
+            } else if (ph.style === 'road') {
+                // Bike: tap no ritmo
+                handleBikeTap();
+            } else {
+                // Run: duplo pulo
+                if (jumpCount < 2) {
+                    const force = jumpCount === 0 ? JUMP_FORCE : -11.5;
+                    playerVY = force;
+                    isJumping = true;
+                    jumpCount++;
+                    playSound('jump');
+                }
             }
         } else if (state === STATE.END) {
             state = STATE.START;
@@ -850,6 +1135,7 @@
             drawBg(p);
             updateBgDecos();
             updatePlayer();
+            if (p.style === 'road') updateBikePhase();
 
             // Spawn logic
             spawnTimer++;
@@ -861,7 +1147,11 @@
             }
 
             updateObstacles();
-            obstacles.forEach(obs => drawObstacle(obs));
+            if (p.style === 'water') {
+                obstacles.forEach(obs => drawSwimObstacle(obs));
+            } else {
+                obstacles.forEach(obs => drawObstacle(obs));
+            }
 
             // ── João Carlos ────────────────────────────────────────
             catSpawnTimer++;
@@ -887,6 +1177,7 @@
 
             drawPlayer();
             drawHUD();
+            if (p.style === 'road') drawBikeHUD();
 
         } else if (state === STATE.DONE) {
             const prev = CONFIG.phases[Math.max(phaseIdx - 1, 0)];
