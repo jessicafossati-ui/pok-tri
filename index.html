@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PokéTri Challenge 🎮 - Bruno</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0d0d1a;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            font-family: 'Press Start 2P', monospace;
+        }
+        canvas {
+            border: 3px solid #e63946;
+            border-radius: 8px;
+            max-width: 100vw;
+            max-height: 90vh;
+            box-shadow: 0 0 40px rgba(230, 57, 70, 0.4);
+        }
+
+        /* ── Tela Final (HTML overlay) ── */
+        #end-overlay {
+            display: none;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #0d0d1a;
+            flex-direction: column; align-items: center; justify-content: center;
+            z-index: 500; overflow: hidden;
+            font-family: 'Press Start 2P', monospace;
+        }
+        #end-overlay.visible { display: flex; }
+        #end-photo {
+            width: 140px; height: 140px; border-radius: 50%;
+            border: 5px solid #ffd60a;
+            object-fit: cover; margin-bottom: 18px;
+        }
+        .end-title { color: #ffd60a; font-size: 14px; margin-bottom: 8px; text-align:center; }
+        .end-name  { color: #ffffff; font-size: 24px; margin-bottom: 18px; text-align:center; }
+        .end-msg   { color: #b8e0ff; font-size: 9px; line-height: 2.2; text-align:center; }
+        .end-btn   { margin-top: 28px; padding: 10px 20px; background: transparent; border: 2px solid rgba(255,255,255,0.3); color: rgba(255,255,255,0.5); font-family: 'Press Start 2P', monospace; font-size: 7px; cursor: pointer; animation: blink 1.2s step-end infinite; }
+        .end-medals { font-size: 22px; margin-top: 16px; letter-spacing: 6px; }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* ── Confetti CSS ── */
+        .cf { position: absolute; top: -12px; width: 10px; height: 6px; opacity: 0.85;
+              animation: cffall linear infinite; border-radius: 2px; }
+        @keyframes cffall {
+            0%   { transform: translateY(0) rotate(0deg) scaleX(1); }
+            50%  { transform: translateY(50vh) rotate(360deg) scaleX(-1); }
+            100% { transform: translateY(105vh) rotate(720deg) scaleX(1); }
+        }
+        #hint {
+            color: rgba(255,255,255,0.4);
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9px;
+            margin-top: 12px;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+    <div id="end-overlay">
+        <img id="end-photo" src="" alt="foto">
+        <div class="end-medals">🏊 🚴 🏃 🏆</div>
+        <div class="end-title" style="margin-top:14px">Feliz Aniversário,</div>
+        <div class="end-name">Bruno!</div>
+        <div class="end-msg">Feliz aniversário, meu amor.<br>Eu te amo muito. ❤️</div>
+        <button class="end-btn" id="restart-btn">▶ jogar de novo</button>
+    </div>
+    <div id="hint">ESPAÇO ou CLIQUE para jogar · feito com ❤️</div>
+
+    <script>
+    // ============================================================
+    //  CONFIGURAÇÃO PERSONALIZADA
+    // ============================================================
+    const CONFIG = {
+        nome: "Bruno",
+        mensagem: ["Feliz aniversário, meu amor.", "Eu te amo muito. ❤️"],
+        fotoPath: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4Qr0RXhpZgAATU0AKgAAAAgACwEPAAIAAAAGAAAAkgEQAAIAAAAKAAAAmAESAAMAAAABAAYAAAEaAAUAAAABAAAAogEbAAUAAAABAAAAqgEoAAMAAAABAAIAAAExAAIAAAAFAAAAsgEyAAIAAAAUAAAAuAE8AAIAAAAKAAAAzIdpAAQAAAABAAAA1oglAAQAAAABAAAJtgAAAABBcHBsZQBpUGhvbmUgMTMAAAAASAAAAAEAAABIAAAAATE4LjUAADIwMjU6MDY6MDEgMDY6MTI6MTAAaVBob25lIDEzAAAigpoABQAAAAEAAAJ0gp0ABQAAAAEAAAJ8iCIAAwAAAAEAAgAAiCcAAwAAAAEAKAAAkAAABwAAAAQwMjMykAMAAgAAABQAAAKEkAQAAgAAABQAAAKYkBAAAgAAAAcAAAKskBEAAgAAAAcAAAK0kBIAAgAAAAcAAAK8kQEABwAAAAQBAgMAkgEACgAAAAEAAALEkgIABQAAAAEAAALMkgMACgAAAAEAAALUkgQACgAAAAEAAALckgcAAwAAAAEABQAAkgkAAwAAAAEACQAAkgoABQAAAAEAAALkkhQAAwAAAAQAAALsknwABwAABnAAAAL0kpEAAgAAAAQ5NzIAkpIAAgAAAAQ5NzIAoAAABwAAAAQwMTAwoAIABAAAAAEAAADIoAMABAAAAAEAAADIohcAAwAAAAEAAgAAowEABwAAAAEBAAAApAIAAwAAAAEAAAAApAMAAwAAAAEAAAAApAUAAwAAAAEAGgAApAYAAwAAAAEAAAAApDIABQAAAAQAAAlkpDMAAgAAAAYAAAmEpDQAAgAAACwAAAmKAAAAAAAAAAEAAAAEAAAACAAAAAUyMDI1OjA2OjAxIDA2OjEyOjEwADIwMjU6MDY6MDEgMDY6MTI6MTAALTAzOjAwAAAtMDM6MDAAAC0wMzowMAAAAAAyXQAAGNEAADhvAAApnf//VVEAAE7d//+xvQAA6doAAAAzAAAACgfbBeQJEwUyQXBwbGUgaU9TAAABTU0AMgABAAkAAAABAAAADwACAAcAAAIAAAACbAADAAcAAABoAAAEbAAEAAkAAAABAAAAAQAFAAkAAAABAAAAsQAGAAkAAAABAAAAHwAHAAkAAAABAAAAAQAIAAoAAAADAAAE1AAMAAoAAAACAAAE7AANAAkAAAABAAAACwAOAAkAAAABAAAABAAPAAkAAAABAAAAAgAQAAkAAAABAAAAAQAUAAkAAAABAAAAAgAXABAAAAABAAAE/AAZAAkAAAABAAAAAAAaAAIAAAAGAAAFBAAfAAkAAAABAAAAAAAgAAIAAAAlAAAFCgAhAAoAAAABAAAFLwAjAAkAAAACAAAFNwAlABAAAAABAAAFPwAmAAkAAAABAAAAAwAnAAoAAAABAAAFRwArAAIAAAAlAAAFTwAtAAkAAAABAAAQ1AAuAAkAAAABAAAAAQAvAAkAAAABAAAAQgAzAAkAAAABAAAAAAA0AAkAAAABAAAAAQA1AAkAAAABAAAAAAA2AAkAAAABAAAAKAA3AAkAAAABAAAAAQA6AAkAAAABAAAAAAA7AAkAAAABAAAAAAA8AAkAAAABAAAABAA/AAkAAAABAAAAAABAAAcAAABQAAAFdABBAAkAAAABAAAAAABDAAkAAAABAAAAAABEAAkAAAABAAAAAABFAAkAAAABAAAAAABGAAkAAAABAAAAAABKAAkAAAABAAAAAgBNAAoAAAABAAAFxABOAAcAAAB5AAAFzABPAAcAAAArAAAGRQBVAAkAAAABAAAATABYAAkAAAABAAAGAwBZAAkAAAABAAB3SAAAAAADAAUABwAJAA4AFQATACAABgABAAIAAwADAAQABgAHAAMABQAHAAkADgAVABQACwAFAAEAAgADAAMABQAGAAcAAwAFAAYACQAOABYAFQAKAAYAAQACAAMABAAFAAcACAADAAUABgAJAA0AFQAVAAoABgABAAYADQANAAsADAAMAAMABAAGAAkADQAUABUACgAGAAQAEQAWABMAFQASAA4AAwAEAAYACAANABQAFAAKAAYABwAXABoAGwARABEAFAADAAQABgAIAAoAEAAjABIACAAKABcAQABeACEAHgAjAAMABAAGAAkACwBEAJoAZQAZAEMAVwAqADgAPgAwACoAAwAEAAYACgAhAHMAjwCLAE0AfwCpAEkAUQBgADMALgADAAQABQAIACMAewCQAJkAWgCwALoAXwAkACIAIwAiAAMABAAFAAYAKABXAKwAeABWAJIApgBQAHkAQQBDACkAAwADAAUABwAIABcAXQATAAwAXgBRADcAqgDOAD4AHgACAAMABAAGAAoA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",
+        phases: [
+            {
+                id: 1,
+                label: "FASE 1",
+                name: "NATAÇÃO 🏊",
+                pokemonId: 134,        // Vaporeon
+                pokemonName: "VAPOREON",
+                bgTop: "#0077b6",
+                bgBot: "#023e8a",
+                groundColor: "#48cae4",
+                groundShadow: "#0096c7",
+                obstaclePrimary: "#4a4e69",
+                obstacleSecondary: "#9a8c98",
+                collectColor: "#ffd60a",
+                style: "water",
+                obstacleCount: 8,
+                baseSpeed: 4,
+            },
+            {
+                id: 2,
+                label: "FASE 2",
+                name: "CICLISMO 🚴",
+                pokemonId: 135,        // Jolteon
+                pokemonName: "JOLTEON",
+                bgTop: "#4cc9f0",
+                bgBot: "#4361ee",
+                groundColor: "#495057",
+                groundShadow: "#212529",
+                obstaclePrimary: "#e63946",
+                obstacleSecondary: "#ffffff",
+                collectColor: "#ffd60a",
+                style: "road",
+                obstacleCount: 10,
+                baseSpeed: 5,
+            },
+            {
+                id: 3,
+                label: "FASE 3",
+                name: "CORRIDA 🏃",
+                pokemonId: 59,         // Arcanine
+                pokemonName: "ARCANINE",
+                bgTop: "#52b788",
+                bgBot: "#1b4332",
+                groundColor: "#95d5b2",
+                groundShadow: "#52b788",
+                obstaclePrimary: "#6d4c41",
+                obstacleSecondary: "#a1887f",
+                collectColor: "#ffd60a",
+                style: "park",
+                obstacleCount: 12,
+                baseSpeed: 6,
+            }
+        ]
+    };
+
+    // ============================================================
+    //  CONSTANTES DE LAYOUT
+    // ============================================================
+    const W = 800, H = 400;
+    const GROUND_Y = 308;        // topo do chão
+    const GROUND_H = H - GROUND_Y;
+    const SPRITE_SIZE = 64;
+    const PLAYER_GROUND = GROUND_Y - SPRITE_SIZE;  // y do player em pé = 244
+    const OBS_H = 58;
+    const OBS_W = 38;
+    const OBS_Y = GROUND_Y - OBS_H;               // y do obstáculo = 250
+
+    // ============================================================
+    //  ESTADO DO JOGO
+    // ============================================================
+    const STATE = { START: 0, INTRO: 1, PLAYING: 2, DONE: 3, END: 4 };
+    let state = STATE.START;
+    let phaseIdx = 0;
+    let lives = 3;
+    let cleared = 0;
+    let frame = 0;
+    let speed = 4;
+    let spawnTimer = 0;
+    let spawnInterval = 110;
+    let obstacles = [];
+    let bgDecos = [];
+    let playerY = PLAYER_GROUND;
+    let playerVY = 0;
+    let isJumping = false;
+    let isHurt = false;
+    let hurtTimer = 0;
+    let deathAnim = false;
+    const JUMP_FORCE = -13.5;
+    const GRAVITY = 0.62;
+
+    // ============================================================
+    //  RECURSOS
+    // ============================================================
+    const sprites = {};
+    let photoImg = null;
+    let fontsLoaded = false;
+
+    function loadSprites() {
+        return Promise.all(CONFIG.phases.map(p => new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            // Prefer animated GIF from showdown sprites, fallback to static
+            img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemonId}.png`;
+            img.onload = () => { sprites[p.pokemonId] = img; resolve(); };
+            img.onerror = () => { sprites[p.pokemonId] = null; resolve(); };
+        })));
+    }
+
+    function loadPhoto() {
+        photoImg = new Image();
+        photoImg.src = CONFIG.fotoPath;
+        photoImg.onerror = () => { photoImg = null; };
+    }
+
+    // ============================================================
+    //  INICIALIZAÇÃO DE FASE
+    // ============================================================
+    function initPhase() {
+        const p = CONFIG.phases[phaseIdx];
+        speed = p.baseSpeed;
+        obstacles = [];
+        bgDecos = makeBgDecos(p.style);
+        cleared = 0;
+        frame = 0;
+        spawnTimer = 0;
+        spawnInterval = 110;
+        playerY = PLAYER_GROUND;
+        playerVY = 0;
+        isJumping = false;
+        isHurt = false;
+        hurtTimer = 0;
+        lives = 3;
+    }
+
+    function makeBgDecos(style) {
+        const decos = [];
+        const count = style === "road" ? 4 : 6;
+        for (let i = 0; i < count; i++) {
+            decos.push({
+                x: Math.random() * W,
+                y: Math.random() * 180 + 30,
+                size: Math.random() * 35 + 15,
+                speed: Math.random() * 1.2 + 0.4,
+                seed: Math.random()
+            });
+        }
+        return decos;
+    }
+
+    // ============================================================
+    //  DESENHO DE FUNDO
+    // ============================================================
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function drawBg(p) {
+        // Sky
+        const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+        grad.addColorStop(0, p.bgTop);
+        grad.addColorStop(1, p.bgBot);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, GROUND_Y);
+
+        // Background decorations
+        if (p.style === "water")  drawWaterBg();
+        if (p.style === "road")   drawRoadBg();
+        if (p.style === "park")   drawParkBg();
+
+        // Ground
+        ctx.fillStyle = p.groundShadow;
+        ctx.fillRect(0, GROUND_Y + 4, W, GROUND_H);
+        ctx.fillStyle = p.groundColor;
+        ctx.fillRect(0, GROUND_Y, W, 4);
+        ctx.fillStyle = p.groundColor;
+        ctx.globalAlpha = 0.3;
+        ctx.fillRect(0, GROUND_Y, W, GROUND_H);
+        ctx.globalAlpha = 1;
+    }
+
+    function drawWaterBg() {
+        // Wave lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 3;
+        for (let row = 0; row < 4; row++) {
+            const baseY = 120 + row * 50;
+            const offset = (frame * 1.8 + row * 60) % W;
+            ctx.beginPath();
+            for (let x = -offset; x < W + 40; x += 40) {
+                ctx.moveTo(x, baseY);
+                ctx.quadraticCurveTo(x + 10, baseY - 8, x + 20, baseY);
+                ctx.quadraticCurveTo(x + 30, baseY + 8, x + 40, baseY);
+            }
+            ctx.stroke();
+        }
+        // Bubbles
+        bgDecos.forEach(d => {
+            ctx.fillStyle = 'rgba(255,255,255,0.35)';
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, d.size * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    function drawRoadBg() {
+        // Clouds
+        bgDecos.forEach(d => {
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2);
+            ctx.arc(d.x + d.size * 0.9, d.y - d.size * 0.3, d.size * 0.75, 0, Math.PI * 2);
+            ctx.arc(d.x - d.size * 0.9, d.y - d.size * 0.25, d.size * 0.65, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        // Road dashes
+        const dash = 50;
+        const gap = 40;
+        const total = dash + gap;
+        const offset = (frame * speed) % total;
+        ctx.setLineDash([dash, gap]);
+        ctx.lineDashOffset = -offset;
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(0, GROUND_Y + 16);
+        ctx.lineTo(W, GROUND_Y + 16);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    function drawParkBg() {
+        bgDecos.forEach(d => {
+            // Trunk
+            ctx.fillStyle = '#6d4c41';
+            ctx.fillRect(d.x - 5, d.y + d.size * 0.4, 10, d.size * 0.7);
+            // Foliage
+            ctx.fillStyle = d.seed > 0.5 ? '#2d6a4f' : '#40916c';
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, d.size * 0.65, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    function updateBgDecos() {
+        bgDecos.forEach(d => {
+            d.x -= d.speed;
+            if (d.x + d.size < 0) {
+                d.x = W + d.size;
+                d.y = Math.random() * 180 + 30;
+            }
+        });
+    }
+
+    // ============================================================
+    //  DESENHO DO JOGADOR
+    // ============================================================
+    function drawPlayer() {
+        const p = CONFIG.phases[phaseIdx];
+        const img = sprites[p.pokemonId];
+        const bob = isJumping ? 0 : Math.sin(frame * 0.18) * 3;
+        const x = 100;
+        const y = playerY + bob;
+
+        // Hurt flash effect
+        if (isHurt && Math.floor(hurtTimer / 5) % 2 === 0) {
+            ctx.globalAlpha = 0.4;
+        }
+
+        if (img) {
+            ctx.save();
+            ctx.translate(x + SPRITE_SIZE, y);
+            ctx.scale(-1, 1);
+            ctx.drawImage(img, 0, 0, SPRITE_SIZE, SPRITE_SIZE);
+            ctx.restore();
+        } else {
+            ctx.fillStyle = '#ffcc00';
+            ctx.fillRect(x, y, SPRITE_SIZE, SPRITE_SIZE);
+        }
+
+        ctx.globalAlpha = 1;
+
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.beginPath();
+        ctx.ellipse(x + SPRITE_SIZE / 2, GROUND_Y + 2, 24, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // ============================================================
+    //  DESENHO DE OBSTÁCULOS
+    // ============================================================
+    function drawObstacle(obs) {
+        const p = CONFIG.phases[phaseIdx];
+        const x = obs.x, y = obs.y, w = obs.w, h = obs.h;
+
+        if (p.style === "water") {
+            // Rock
+            ctx.fillStyle = p.obstaclePrimary;
+            ctx.beginPath();
+            ctx.ellipse(x + w / 2, y + h * 0.65, w / 2, h * 0.45, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = p.obstacleSecondary;
+            ctx.beginPath();
+            ctx.ellipse(x + w / 2 - 5, y + h * 0.45, w / 3, h * 0.3, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+        } else if (p.style === "road") {
+            // Traffic cone
+            ctx.fillStyle = p.obstaclePrimary;
+            ctx.beginPath();
+            ctx.moveTo(x + w / 2, y);
+            ctx.lineTo(x + w, y + h);
+            ctx.lineTo(x, y + h);
+            ctx.closePath();
+            ctx.fill();
+            // White stripe
+            ctx.fillStyle = p.obstacleSecondary;
+            ctx.fillRect(x + w * 0.18, y + h * 0.38, w * 0.64, h * 0.14);
+            ctx.fillRect(x + w * 0.22, y + h * 0.6, w * 0.56, h * 0.12);
+
+        } else {
+            // Hurdle
+            ctx.fillStyle = p.obstaclePrimary;
+            ctx.fillRect(x, y, w, h * 0.13);
+            ctx.fillRect(x + w * 0.08, y, w * 0.18, h);
+            ctx.fillRect(x + w * 0.74, y, w * 0.18, h);
+            ctx.fillStyle = p.obstacleSecondary;
+            ctx.fillRect(x, y + h * 0.5, w, h * 0.11);
+        }
+    }
+
+    // ============================================================
+    //  DESENHO DO HUD
+    // ============================================================
+    function drawHUD() {
+        const p = CONFIG.phases[phaseIdx];
+
+        // Top bar background
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(0, 0, W, 38);
+
+        // Phase name
+        ctx.fillStyle = '#ffd60a';
+        ctx.font = '11px "Press Start 2P"';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${p.label}: ${p.name}`, 14, 24);
+
+        // Lives
+        ctx.textAlign = 'center';
+        ctx.fillStyle = lives > 1 ? 'white' : '#e63946';
+        ctx.fillText(`❤️ ${lives}`, W / 2, 24);
+
+        // Progress bar
+        const barX = W - 200, barY = 11, barW = 186, barH = 16;
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillRect(barX, barY, barW, barH);
+        const prog = Math.min(cleared / p.obstacleCount, 1);
+        ctx.fillStyle = '#ffd60a';
+        ctx.fillRect(barX, barY, barW * prog, barH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(barX, barY, barW, barH);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'white';
+        ctx.font = '8px "Press Start 2P"';
+        ctx.fillText(`${cleared}/${p.obstacleCount}`, W - 14, 24);
+
+        ctx.textAlign = 'left';
+    }
+
+    // ============================================================
+    //  TELAS ESPECIAIS
+    // ============================================================
+    function drawStartScreen() {
+        ctx.fillStyle = '#0d0d1a';
+        ctx.fillRect(0, 0, W, H);
+
+        // Stars
+        for (let i = 0; i < 60; i++) {
+            const sx = (i * 137 + 11) % W;
+            const sy = (i * 89 + 7) % H;
+            const blink = Math.sin(frame * 0.06 + i * 1.3) > 0.5;
+            ctx.fillStyle = blink ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.2)';
+            ctx.fillRect(sx, sy, 2, 2);
+        }
+
+        // Pokeball
+        const cx = W / 2, cy = H / 2 + 10;
+        const r = 90 + Math.sin(frame * 0.04) * 5;
+        ctx.fillStyle = '#e63946';
+        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = '#f1f1f1';
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI); ctx.fill();
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(cx - r, cy - 5, r * 2, 10);
+        ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#e63946';
+        ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#1a1a2e'; ctx.lineWidth = 4; ctx.stroke();
+
+        // Overlay
+        ctx.fillStyle = 'rgba(13,13,26,0.72)';
+        ctx.fillRect(0, 0, W, H);
+
+        // Title
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#e63946';
+        ctx.font = 'bold 30px "Press Start 2P"';
+        ctx.fillText('PokéTri', W / 2, 90);
+        ctx.fillStyle = '#ffd60a';
+        ctx.font = 'bold 22px "Press Start 2P"';
+        ctx.fillText('Challenge', W / 2, 128);
+
+        // Birthday
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.font = '12px "Press Start 2P"';
+        ctx.fillText('Feliz Aniversário,', W / 2, 175);
+        ctx.fillStyle = '#ffd60a';
+        ctx.font = 'bold 20px "Press Start 2P"';
+        ctx.fillText(`${CONFIG.nome}! 🎂`, W / 2, 208);
+
+        // Sprites preview
+        let drawn = 0;
+        CONFIG.phases.forEach((p, i) => {
+            const img = sprites[p.pokemonId];
+            if (img) {
+                ctx.drawImage(img, 220 + i * 155, 240, 56, 56);
+                drawn++;
+            }
+        });
+
+        // Press start blinking
+        if (Math.floor(frame / 28) % 2 === 0) {
+            ctx.fillStyle = 'white';
+            ctx.font = '11px "Press Start 2P"';
+            ctx.fillText('▶ PRESSIONE ESPAÇO', W / 2, 360);
+        }
+        ctx.textAlign = 'left';
+    }
+
+    function drawPhaseIntro() {
+        const p = CONFIG.phases[phaseIdx];
+
+        ctx.fillStyle = 'rgba(0,0,0,0.88)';
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.textAlign = 'center';
+
+        ctx.fillStyle = '#ffd60a';
+        ctx.font = '12px "Press Start 2P"';
+        ctx.fillText(`${p.label} DE 3`, W / 2, 95);
+
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 22px "Press Start 2P"';
+        ctx.fillText(p.name, W / 2, 140);
+
+        const img = sprites[p.pokemonId];
+        if (img) {
+            ctx.drawImage(img, W / 2 - 56, 158, 112, 112);
+        }
+
+        ctx.fillStyle = '#90e0ef';
+        ctx.font = '11px "Press Start 2P"';
+        ctx.fillText(p.pokemonName, W / 2, 295);
+
+        if (Math.floor(frame / 26) % 2 === 0) {
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.font = '9px "Press Start 2P"';
+            ctx.fillText('Clique ou Espaço para começar!', W / 2, 365);
+        }
+        ctx.textAlign = 'left';
+    }
+
+    function drawPhaseComplete() {
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.textAlign = 'center';
+
+        ctx.fillStyle = '#ffd60a';
+        ctx.font = 'bold 24px "Press Start 2P"';
+        ctx.fillText('FASE COMPLETA! 🏆', W / 2, 160);
+
+        ctx.fillStyle = 'white';
+        ctx.font = '12px "Press Start 2P"';
+        const labels = ['🏊 Natação', '🚴 Ciclismo', '🏃 Corrida'];
+        for (let i = 0; i < phaseIdx; i++) {
+            ctx.fillText(`✅ ${labels[i]}`, W / 2, 220 + i * 30);
+        }
+
+        if (Math.floor(frame / 25) % 2 === 0) {
+            ctx.fillStyle = '#90e0ef';
+            ctx.font = '10px "Press Start 2P"';
+            ctx.fillText('Preparando próxima fase...', W / 2, 350);
+        }
+        ctx.textAlign = 'left';
+    }
+
+    function drawEndScreen() {
+        // Tela final está no overlay HTML — só escurece o canvas abaixo
+        ctx.fillStyle = '#0d0d1a';
+        ctx.fillRect(0, 0, W, H);
+    }
+
+    // ============================================================
+    //  LÓGICA DE JOGO
+    // ============================================================
+    function updatePlayer() {
+        if (isJumping) {
+            playerVY += GRAVITY;
+            playerY += playerVY;
+            if (playerY >= PLAYER_GROUND) {
+                playerY = PLAYER_GROUND;
+                playerVY = 0;
+                isJumping = false;
+            }
+        }
+        if (isHurt) {
+            hurtTimer--;
+            if (hurtTimer <= 0) isHurt = false;
+        }
+    }
+
+    function spawnObstacle() {
+        obstacles.push({ x: W + 10, y: OBS_Y, w: OBS_W, h: OBS_H, speed });
+    }
+
+    function updateObstacles() {
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            const obs = obstacles[i];
+            obs.x -= obs.speed;
+
+            // Collision (tight hitbox)
+            if (
+                !isHurt &&
+                100 + 10 < obs.x + obs.w - 6 &&
+                100 + SPRITE_SIZE - 10 > obs.x + 6 &&
+                playerY + 10 < obs.y + obs.h - 6 &&
+                playerY + SPRITE_SIZE - 6 > obs.y + 6
+            ) {
+                isHurt = true;
+                hurtTimer = 40;
+                lives--;
+                obstacles.splice(i, 1);
+                if (lives <= 0) { resetPhase(); return; }
+                continue;
+            }
+
+            if (obs.x + obs.w < 0) {
+                obstacles.splice(i, 1);
+                cleared++;
+                if (cleared >= CONFIG.phases[phaseIdx].obstacleCount) {
+                    completePhase();
+                }
+            }
+        }
+    }
+
+    function resetPhase() {
+        // Blink and restart phase
+        lives = 3;
+        cleared = 0;
+        obstacles = [];
+        playerY = PLAYER_GROUND;
+        playerVY = 0;
+        isJumping = false;
+        isHurt = false;
+        hurtTimer = 0;
+        spawnTimer = 0;
+        spawnInterval = 110;
+        speed = CONFIG.phases[phaseIdx].baseSpeed;
+        frame = 0;
+    }
+
+    function completePhase() {
+        state = STATE.DONE;
+        phaseIdx++;
+        frame = 0;
+        obstacles = [];
+        setTimeout(() => {
+            if (phaseIdx >= CONFIG.phases.length) {
+                state = STATE.END;
+                launchConfetti();
+            } else {
+                initPhase();
+                state = STATE.INTRO;
+            }
+        }, 2800);
+    }
+
+    // ============================================================
+    //  TELA FINAL — overlay HTML (mais confiável que canvas)
+    // ============================================================
+    const CF_COLORS = ['#ffd60a','#e63946','#90e0ef','#52b788','#ffffff','#c77dff','#ff9f1c'];
+
+    function launchConfetti() {
+        const overlay = document.getElementById('end-overlay');
+        // Set photo
+        document.getElementById('end-photo').src = CONFIG.fotoPath;
+        // Remove old confetti pieces
+        overlay.querySelectorAll('.cf').forEach(el => el.remove());
+        // Create CSS confetti pieces
+        for (let i = 0; i < 60; i++) {
+            const el = document.createElement('div');
+            el.className = 'cf';
+            el.style.left = (Math.random() * 100) + 'vw';
+            el.style.background = CF_COLORS[Math.floor(Math.random() * CF_COLORS.length)];
+            el.style.width = (Math.random() * 10 + 6) + 'px';
+            el.style.height = (Math.random() * 6 + 3) + 'px';
+            el.style.animationDuration = (Math.random() * 2.5 + 1.5) + 's';
+            el.style.animationDelay = (Math.random() * 3) + 's';
+            overlay.appendChild(el);
+        }
+        // Show overlay
+        overlay.classList.add('visible');
+        // Only the restart button closes the overlay
+        document.getElementById('restart-btn').onclick = (e) => {
+            e.stopPropagation();
+            overlay.classList.remove('visible');
+            state = STATE.START;
+            frame = 0;
+        };
+    }
+
+    function drawConfetti() {} // no-op, confetti is now in HTML
+
+    function handleAction() {
+        if (state === STATE.START) {
+            phaseIdx = 0;
+            initPhase();
+            state = STATE.INTRO;
+        } else if (state === STATE.INTRO) {
+            state = STATE.PLAYING;
+            frame = 0;
+        } else if (state === STATE.PLAYING) {
+            if (!isJumping) {
+                playerVY = JUMP_FORCE;
+                isJumping = true;
+            }
+        } else if (state === STATE.END) {
+            state = STATE.START;
+            frame = 0;
+        }
+    }
+
+    // ============================================================
+    //  LOOP PRINCIPAL
+    // ============================================================
+    function tick() {
+        frame++;
+        ctx.clearRect(0, 0, W, H);
+
+        if (state === STATE.START) {
+            drawStartScreen();
+
+        } else if (state === STATE.INTRO) {
+            drawPhaseIntro();
+
+        } else if (state === STATE.PLAYING) {
+            const p = CONFIG.phases[phaseIdx];
+            drawBg(p);
+            updateBgDecos();
+            updatePlayer();
+
+            // Spawn logic
+            spawnTimer++;
+            if (spawnTimer >= spawnInterval) {
+                spawnObstacle();
+                spawnTimer = 0;
+                if (spawnInterval > 62) spawnInterval -= 2;
+                if (speed < 9) speed += 0.08;
+            }
+
+            updateObstacles();
+            obstacles.forEach(obs => drawObstacle(obs));
+            drawPlayer();
+            drawHUD();
+
+        } else if (state === STATE.DONE) {
+            const prev = CONFIG.phases[Math.max(phaseIdx - 1, 0)];
+            drawBg(prev);
+            drawPhaseComplete();
+
+        } else if (state === STATE.END) {
+            drawEndScreen();
+        }
+
+        requestAnimationFrame(tick);
+    }
+
+    // ============================================================
+    //  INPUT
+    // ============================================================
+    document.addEventListener('keydown', e => {
+        if (e.code === 'Space' || e.code === 'ArrowUp') {
+            e.preventDefault();
+            handleAction();
+        }
+    });
+    canvas.addEventListener('click', handleAction);
+    canvas.addEventListener('touchstart', e => { e.preventDefault(); handleAction(); }, { passive: false });
+
+    // ============================================================
+    //  START
+    // ============================================================
+    async function main() {
+        await loadSprites();
+        loadPhoto();
+        tick();
+    }
+    main();
+    </script>
+</body>
+</html>
