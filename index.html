@@ -90,6 +90,9 @@
                 id: 1,
                 label: "FASE 1",
                 name: "NATAÇÃO 🏊",
+                raceName: "70.3 PANAMÁ",
+                raceDate: "30 MAR 2025",
+                raceType: "IRONMAN 70.3",
                 pokemonId: 134,        // Vaporeon
                 pokemonName: "VAPOREON",
                 bgTop: "#0077b6",
@@ -107,6 +110,9 @@
                 id: 2,
                 label: "FASE 2",
                 name: "CICLISMO 🚴",
+                raceName: "IRONMAN BRASIL",
+                raceDate: "1 JUN 2025",
+                raceType: "FULL IRONMAN",
                 pokemonId: 135,        // Jolteon
                 pokemonName: "JOLTEON",
                 bgTop: "#4cc9f0",
@@ -124,6 +130,9 @@
                 id: 3,
                 label: "FASE 3",
                 name: "CORRIDA 🏃",
+                raceName: "70.3 ARACAJU",
+                raceDate: "30 NOV 2025",
+                raceType: "IRONMAN 70.3",
                 pokemonId: 59,         // Arcanine
                 pokemonName: "ARCANINE",
                 bgTop: "#52b788",
@@ -158,6 +167,63 @@
     const STATE = { START: 0, INTRO: 1, PLAYING: 2, DONE: 3, END: 4 };
     let state = STATE.START;
     let phaseIdx = 0;
+
+    // ── Áudio (Web Audio API) ─────────────────────────────────────
+    let audioCtx = null;
+    function ensureAudio() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+    function playSound(type) {
+        try {
+            if (!audioCtx) return;
+            const C = audioCtx, t = C.currentTime;
+            const note = (freq, start, dur, wave='sine', vol=0.25) => {
+                const o = C.createOscillator(), g = C.createGain();
+                o.connect(g); g.connect(C.destination);
+                o.type = wave;
+                o.frequency.setValueAtTime(freq, t + start);
+                g.gain.setValueAtTime(vol, t + start);
+                g.gain.exponentialRampToValueAtTime(0.001, t + start + dur);
+                o.start(t + start); o.stop(t + start + dur + 0.02);
+            };
+            if (type === 'jump') {
+                const o = C.createOscillator(), g = C.createGain();
+                o.connect(g); g.connect(C.destination);
+                o.frequency.setValueAtTime(350, t);
+                o.frequency.exponentialRampToValueAtTime(700, t + 0.09);
+                g.gain.setValueAtTime(0.22, t);
+                g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+                o.start(t); o.stop(t + 0.2);
+            } else if (type === 'hit') {
+                const o = C.createOscillator(), g = C.createGain();
+                o.connect(g); g.connect(C.destination);
+                o.type = 'sawtooth';
+                o.frequency.setValueAtTime(220, t);
+                o.frequency.exponentialRampToValueAtTime(55, t + 0.18);
+                g.gain.setValueAtTime(0.3, t);
+                g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+                o.start(t); o.stop(t + 0.25);
+            } else if (type === 'cat') {
+                const o = C.createOscillator(), g = C.createGain();
+                o.connect(g); g.connect(C.destination);
+                o.frequency.setValueAtTime(900, t);
+                o.frequency.linearRampToValueAtTime(600, t + 0.12);
+                o.frequency.linearRampToValueAtTime(760, t + 0.26);
+                g.gain.setValueAtTime(0.28, t);
+                g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+                o.start(t); o.stop(t + 0.4);
+            } else if (type === 'phase') {
+                [523, 659, 784].forEach((f, i) => note(f, i*0.13, 0.2, 'square', 0.18));
+            } else if (type === 'victory') {
+                [523, 659, 784, 1047].forEach((f, i) => note(f, i*0.13, 0.25, 'square', 0.2));
+            }
+        } catch(e) {}
+    }
+
+    // ── João Carlos (easter egg) ──────────────────────────────────
+    let catX = -200, catActive = false, catSpawnTimer = 0;
+    let catShield = false, catShieldTimer = 0, catMsgTimer = 0;
     let lives = 3;
     let cleared = 0;
     let frame = 0;
@@ -217,6 +283,8 @@
         isHurt = false;
         hurtTimer = 0;
         lives = 3;
+        catX = -200; catActive = false; catSpawnTimer = 0;
+        catShield = false; catShieldTimer = 0; catMsgTimer = 0;
     }
 
     function makeBgDecos(style) {
@@ -365,6 +433,18 @@
 
         ctx.globalAlpha = 1;
 
+        // Shield glow (João Carlos)
+        if (catShield) {
+            const pulse = 0.55 + Math.sin(frame * 0.28) * 0.45;
+            ctx.strokeStyle = '#ffd60a';
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = pulse;
+            ctx.beginPath();
+            ctx.arc(x + SPRITE_SIZE / 2, playerY + SPRITE_SIZE / 2, SPRITE_SIZE / 2 + 10, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        }
+
         // Shadow
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
         ctx.beginPath();
@@ -451,6 +531,15 @@
         ctx.font = '8px "Press Start 2P"';
         ctx.fillText(`${cleared}/${p.obstacleCount}`, W - 14, 24);
 
+        // Mensagem João Carlos
+        if (catMsgTimer > 0) {
+            const alpha = catMsgTimer / 130;
+            ctx.fillStyle = `rgba(255,215,0,${alpha})`;
+            ctx.font = '10px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText('João Carlos te ajudou! 🐱', W / 2, H / 2 - 20);
+        }
+
         ctx.textAlign = 'left';
     }
 
@@ -505,6 +594,10 @@
         ctx.font = 'bold 20px "Press Start 2P"';
         ctx.fillText(`${CONFIG.nome}! 🎂`, W / 2, 208);
 
+        ctx.fillStyle = 'rgba(255,255,255,0.38)';
+        ctx.font = '7px "Press Start 2P"';
+        ctx.fillText('Temporada 2025  ·  3 provas', W / 2, 232);
+
         // Sprites preview
         let drawn = 0;
         CONFIG.phases.forEach((p, i) => {
@@ -548,6 +641,13 @@
         ctx.fillStyle = '#90e0ef';
         ctx.font = '11px "Press Start 2P"';
         ctx.fillText(p.pokemonName, W / 2, 295);
+
+        ctx.fillStyle = '#ffd60a';
+        ctx.font = '9px "Press Start 2P"';
+        ctx.fillText(p.raceName, W / 2, 322);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = '7px "Press Start 2P"';
+        ctx.fillText(p.raceDate + '  ·  ' + p.raceType, W / 2, 342);
 
         if (Math.floor(frame / 26) % 2 === 0) {
             ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -617,7 +717,7 @@
 
             // Collision (tight hitbox)
             if (
-                !isHurt &&
+                !isHurt && !catShield &&
                 100 + 10 < obs.x + obs.w - 6 &&
                 100 + SPRITE_SIZE - 10 > obs.x + 6 &&
                 playerY + 10 < obs.y + obs.h - 6 &&
@@ -625,6 +725,7 @@
             ) {
                 isHurt = true;
                 hurtTimer = 40;
+                playSound('hit');
                 lives--;
                 obstacles.splice(i, 1);
                 if (lives <= 0) { resetPhase(); return; }
@@ -658,6 +759,7 @@
     }
 
     function completePhase() {
+        playSound(phaseIdx >= CONFIG.phases.length - 1 ? 'victory' : 'phase');
         state = STATE.DONE;
         phaseIdx++;
         frame = 0;
@@ -710,6 +812,7 @@
     function drawConfetti() {} // no-op, confetti is now in HTML
 
     function handleAction() {
+        ensureAudio();
         if (state === STATE.START) {
             phaseIdx = 0;
             initPhase();
@@ -721,6 +824,7 @@
             if (!isJumping) {
                 playerVY = JUMP_FORCE;
                 isJumping = true;
+                playSound('jump');
             }
         } else if (state === STATE.END) {
             state = STATE.START;
@@ -758,6 +862,29 @@
 
             updateObstacles();
             obstacles.forEach(obs => drawObstacle(obs));
+
+            // ── João Carlos ────────────────────────────────────────
+            catSpawnTimer++;
+            if (!catActive && catSpawnTimer > 220 && Math.random() < 0.006) {
+                catActive = true; catX = W + 50; catSpawnTimer = 0;
+            }
+            if (catActive) {
+                catX -= (speed + 3.5);
+                if (catX < 164 && catX + 44 > 100 && !catShield) {
+                    catShield = true; catShieldTimer = 200; catMsgTimer = 130;
+                    catActive = false; playSound('cat');
+                }
+                if (catX < -60) catActive = false;
+                if (catActive) {
+                    ctx.font = '42px serif'; ctx.textAlign = 'center';
+                    ctx.fillText('🐱', catX + 22, PLAYER_GROUND + 46);
+                    ctx.textAlign = 'left';
+                }
+            }
+            if (catShield) { catShieldTimer--; if (catShieldTimer <= 0) catShield = false; }
+            if (catMsgTimer > 0) catMsgTimer--;
+            // ──────────────────────────────────────────────────────
+
             drawPlayer();
             drawHUD();
 
