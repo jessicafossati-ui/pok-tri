@@ -248,6 +248,19 @@
     // ── Run double jump (fase 3) ──────────────────────────────────
     let jumpCount = 0;
 
+    // ── Snake (fase 3 — novo!) ─────────────────────────────────────
+    const SNAKE_CELL = 20;
+    const SNAKE_COLS = 40;
+    const SNAKE_ROWS = 18;
+    const SNAKE_OFFSET_Y = 38;
+    const CLOTHES = ['👕','🩲','🧦','👟','🧢','🩳'];
+    let snakeBody = [], snakeDir = {x:1,y:0}, snakeNextDir = {x:1,y:0};
+    let snakeFood = null, snakeMoveTimer = 0, snakeFoodEmoji = '👕';
+
+    // ── Meg — inimiga (gata tricolor) ─────────────────────────────
+    let megX = -60, megActive = false, megSpawnTimer = 0, megMsgTimer = 0;
+    let megCell = null, megMoveTimer = 0;
+
     // ============================================================
     //  RECURSOS
     // ============================================================
@@ -294,6 +307,8 @@
         catShield = false; catShieldTimer = 0; catMsgTimer = 0;
         bikeSpeed = 5; beatFrame = 0; tapResult = ''; tapResultTimer = 0;
         jumpCount = 0;
+        megX = -60; megActive = false; megSpawnTimer = 0; megMsgTimer = 0;
+        if (p.style === 'park') initSnake();
     }
 
     function makeBgDecos(style) {
@@ -544,18 +559,16 @@
             ctx.fill();
 
         } else if (p.style === "road") {
-            // Traffic cone
-            ctx.fillStyle = p.obstaclePrimary;
+            // Roupas jogadas no chão
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
             ctx.beginPath();
-            ctx.moveTo(x + w / 2, y);
-            ctx.lineTo(x + w, y + h);
-            ctx.lineTo(x, y + h);
-            ctx.closePath();
+            ctx.ellipse(x + w / 2, y + h + 3, w * 0.55, 5, 0, 0, Math.PI * 2);
             ctx.fill();
-            // White stripe
-            ctx.fillStyle = p.obstacleSecondary;
-            ctx.fillRect(x + w * 0.18, y + h * 0.38, w * 0.64, h * 0.14);
-            ctx.fillRect(x + w * 0.22, y + h * 0.6, w * 0.56, h * 0.12);
+            ctx.font = '20px serif'; ctx.textAlign = 'center';
+            ctx.fillText('👕', x + w / 2, y + h * 0.28);
+            ctx.fillText('🧦', x + w / 2 - 5, y + h * 0.60);
+            ctx.fillText('👟', x + w / 2 + 3, y + h * 0.92);
+            ctx.textAlign = 'left';
 
         } else {
             // Hurdle
@@ -641,6 +654,16 @@
             ctx.font = '10px "Press Start 2P"';
             ctx.textAlign = 'center';
             ctx.fillText('João Carlos te ajudou! 🐈‍⬛', W / 2, H / 2 - 20);
+        }
+
+        // Mensagem Meg
+        if (megMsgTimer > 0) {
+            const alpha2 = megMsgTimer / 100;
+            ctx.fillStyle = `rgba(230,57,70,${alpha2})`;
+            ctx.font = '10px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText('MEG ATACOU! 😾', W / 2, H / 2 + 10);
+            megMsgTimer--;
         }
 
         ctx.textAlign = 'left';
@@ -733,6 +756,195 @@
             ctx.fillText(tapResult, W / 2, H / 2 - 30);
         }
         ctx.textAlign = 'left';
+    }
+
+    // ============================================================
+    //  SNAKE FUNCTIONS
+    // ============================================================
+    function initSnake() {
+        const cx = Math.floor(SNAKE_COLS / 2);
+        const cy = Math.floor(SNAKE_ROWS / 2);
+        snakeBody = [{x:cx,y:cy},{x:cx-1,y:cy},{x:cx-2,y:cy}];
+        snakeDir = {x:1,y:0};
+        snakeNextDir = {x:1,y:0};
+        snakeMoveTimer = 0;
+        megCell = null;
+        megMoveTimer = 0;
+        spawnSnakeFood();
+    }
+
+    function spawnSnakeFood() {
+        let pos;
+        do {
+            pos = {x: Math.floor(Math.random() * SNAKE_COLS), y: Math.floor(Math.random() * SNAKE_ROWS)};
+        } while (snakeBody.some(s => s.x === pos.x && s.y === pos.y));
+        snakeFood = pos;
+        snakeFoodEmoji = CLOTHES[Math.floor(Math.random() * CLOTHES.length)];
+    }
+
+    function updateSnake() {
+        if (isHurt) { hurtTimer--; if (hurtTimer <= 0) isHurt = false; return; }
+
+        // Meg movement
+        megMoveTimer++;
+        if (megMoveTimer >= 28) {
+            megMoveTimer = 0;
+            if (!megCell && cleared >= 2) {
+                let pos;
+                do {
+                    pos = {x: Math.floor(Math.random() * SNAKE_COLS), y: Math.floor(Math.random() * SNAKE_ROWS)};
+                } while (snakeBody.some(s => s.x === pos.x && s.y === pos.y) ||
+                          (snakeFood && pos.x === snakeFood.x && pos.y === snakeFood.y));
+                megCell = pos;
+            } else if (megCell) {
+                const head = snakeBody[0];
+                if (Math.random() < 0.55) {
+                    const dx = Math.sign(head.x - megCell.x);
+                    const dy = Math.sign(head.y - megCell.y);
+                    const nx = megCell.x + (dx !== 0 ? dx : 0);
+                    const ny = megCell.y + (dy !== 0 && dx === 0 ? dy : 0);
+                    if (nx >= 0 && nx < SNAKE_COLS && ny >= 0 && ny < SNAKE_ROWS &&
+                        !snakeBody.some(s => s.x === nx && s.y === ny)) {
+                        megCell = {x: nx, y: ny};
+                    }
+                } else {
+                    const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+                    const d = dirs[Math.floor(Math.random() * dirs.length)];
+                    const nx = megCell.x + d.x;
+                    const ny = megCell.y + d.y;
+                    if (nx >= 0 && nx < SNAKE_COLS && ny >= 0 && ny < SNAKE_ROWS &&
+                        !snakeBody.some(s => s.x === nx && s.y === ny)) {
+                        megCell = {x: nx, y: ny};
+                    }
+                }
+            }
+        }
+
+        // Snake movement
+        const interval = Math.max(5, 10 - Math.floor(cleared * 0.4));
+        snakeMoveTimer++;
+        if (snakeMoveTimer < interval) return;
+        snakeMoveTimer = 0;
+
+        snakeDir = snakeNextDir;
+        const head = snakeBody[0];
+        const next = {x: head.x + snakeDir.x, y: head.y + snakeDir.y};
+
+        // Wall collision
+        if (!catShield && (next.x < 0 || next.x >= SNAKE_COLS || next.y < 0 || next.y >= SNAKE_ROWS)) {
+            isHurt = true; hurtTimer = 30; lives--; playSound('hit');
+            if (lives <= 0) { resetPhase(); } else { initSnake(); } return;
+        }
+
+        // Self collision
+        if (!catShield && snakeBody.some(s => s.x === next.x && s.y === next.y)) {
+            isHurt = true; hurtTimer = 30; lives--; playSound('hit');
+            if (lives <= 0) { resetPhase(); } else { initSnake(); } return;
+        }
+
+        // Meg collision
+        if (!catShield && megCell && next.x === megCell.x && next.y === megCell.y) {
+            isHurt = true; hurtTimer = 30; lives--; playSound('hit'); megMsgTimer = 100;
+            if (lives <= 0) { resetPhase(); } else { initSnake(); } return;
+        }
+
+        snakeBody.unshift(next);
+
+        // Eat food
+        if (snakeFood && next.x === snakeFood.x && next.y === snakeFood.y) {
+            cleared++; playSound('jump');
+            const p = CONFIG.phases[phaseIdx];
+            if (cleared >= p.obstacleCount) { completePhase(); } else { spawnSnakeFood(); }
+        } else {
+            snakeBody.pop();
+        }
+    }
+
+    function drawSnakeGame(p) {
+        // Background gradient
+        const grad = ctx.createLinearGradient(0, SNAKE_OFFSET_Y, 0, H);
+        grad.addColorStop(0, '#1b4332');
+        grad.addColorStop(1, '#081c15');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, SNAKE_OFFSET_Y, W, H - SNAKE_OFFSET_Y);
+
+        // Grid lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+        ctx.lineWidth = 1;
+        for (let c = 0; c <= SNAKE_COLS; c++) {
+            ctx.beginPath();
+            ctx.moveTo(c * SNAKE_CELL, SNAKE_OFFSET_Y);
+            ctx.lineTo(c * SNAKE_CELL, H);
+            ctx.stroke();
+        }
+        for (let r = 0; r <= SNAKE_ROWS; r++) {
+            ctx.beginPath();
+            ctx.moveTo(0, SNAKE_OFFSET_Y + r * SNAKE_CELL);
+            ctx.lineTo(W, SNAKE_OFFSET_Y + r * SNAKE_CELL);
+            ctx.stroke();
+        }
+
+        // Meg cell
+        if (megCell) {
+            const mx = megCell.x * SNAKE_CELL;
+            const my = SNAKE_OFFSET_Y + megCell.y * SNAKE_CELL;
+            const pulse = 0.5 + 0.5 * Math.sin(frame * 0.15);
+            ctx.strokeStyle = `rgba(230,57,70,${pulse})`;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(mx + 1, my + 1, SNAKE_CELL - 2, SNAKE_CELL - 2);
+            ctx.font = '16px serif'; ctx.textAlign = 'center';
+            ctx.fillText('🐈', mx + SNAKE_CELL / 2, my + SNAKE_CELL - 3);
+            ctx.textAlign = 'left';
+        }
+
+        // Food
+        if (snakeFood) {
+            const fx = snakeFood.x * SNAKE_CELL;
+            const fy = SNAKE_OFFSET_Y + snakeFood.y * SNAKE_CELL;
+            const glow = 0.5 + 0.5 * Math.sin(frame * 0.12);
+            ctx.shadowColor = `rgba(255,215,0,${glow})`;
+            ctx.shadowBlur = 10;
+            ctx.font = '16px serif'; ctx.textAlign = 'center';
+            ctx.fillText(snakeFoodEmoji, fx + SNAKE_CELL / 2, fy + SNAKE_CELL - 3);
+            ctx.shadowBlur = 0;
+            ctx.textAlign = 'left';
+        }
+
+        // Snake body
+        for (let i = snakeBody.length - 1; i >= 1; i--) {
+            const seg = snakeBody[i];
+            const sx = seg.x * SNAKE_CELL + 1;
+            const sy = SNAKE_OFFSET_Y + seg.y * SNAKE_CELL + 1;
+            ctx.fillStyle = '#52b788';
+            ctx.fillRect(sx, sy, SNAKE_CELL - 2, SNAKE_CELL - 2);
+        }
+
+        // Snake head (Arcanine sprite or fallback)
+        if (snakeBody.length > 0) {
+            const hd = snakeBody[0];
+            const hx = hd.x * SNAKE_CELL;
+            const hy = SNAKE_OFFSET_Y + hd.y * SNAKE_CELL;
+            const sp = sprites[p.pokemonId];
+            if (catShield) {
+                ctx.shadowColor = '#ffd60a';
+                ctx.shadowBlur = 14;
+            }
+            if (sp) {
+                ctx.save();
+                if (snakeDir.x < 0) {
+                    ctx.translate(hx + SNAKE_CELL, hy);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(sp, 0, 0, SNAKE_CELL, SNAKE_CELL);
+                } else {
+                    ctx.drawImage(sp, hx, hy, SNAKE_CELL, SNAKE_CELL);
+                }
+                ctx.restore();
+            } else {
+                ctx.fillStyle = '#2d6a4f';
+                ctx.fillRect(hx + 1, hy + 1, SNAKE_CELL - 2, SNAKE_CELL - 2);
+            }
+            ctx.shadowBlur = 0;
+        }
     }
 
     // ============================================================
@@ -845,7 +1057,7 @@
         const mechHints = [
             'TAP p/ nadar para CIMA!',
             'TAP NO VERDE = velocidade!',
-            'ESPACO 2x = DUPLO PULO!'
+            'SETAS ou TAP = virar a cobra!'
         ];
         ctx.fillStyle = '#52b788';
         ctx.font = '8px "Press Start 2P"';
@@ -1028,6 +1240,8 @@
         frame = 0;
         bikeSpeed = 5; beatFrame = 0; tapResult = ''; tapResultTimer = 0;
         jumpCount = 0;
+        megX = -60; megActive = false; megSpawnTimer = 0; megMsgTimer = 0;
+        if (p.style === 'park') initSnake();
     }
 
     function completePhase() {
@@ -1102,14 +1316,13 @@
                 // Bike: tap no ritmo
                 handleBikeTap();
             } else {
-                // Run: duplo pulo
-                if (jumpCount < 2) {
-                    const force = jumpCount === 0 ? JUMP_FORCE : -11.5;
-                    playerVY = force;
-                    isJumping = true;
-                    jumpCount++;
-                    playSound('jump');
-                }
+                // Snake: tap vira à direita (clockwise)
+                const cwDirs = [{x:1,y:0},{x:0,y:1},{x:-1,y:0},{x:0,y:-1}];
+                const ci = cwDirs.findIndex(d => d.x === snakeNextDir.x && d.y === snakeNextDir.y);
+                let ni = (ci + 1) % 4;
+                const nd = cwDirs[ni];
+                if (nd.x === -snakeDir.x && nd.y === -snakeDir.y) ni = (ni + 1) % 4;
+                snakeNextDir = cwDirs[ni];
             }
         } else if (state === STATE.END) {
             state = STATE.START;
@@ -1134,48 +1347,81 @@
             const p = CONFIG.phases[phaseIdx];
             drawBg(p);
             updateBgDecos();
-            updatePlayer();
-            if (p.style === 'road') updateBikePhase();
 
-            // Spawn logic
-            spawnTimer++;
-            if (spawnTimer >= spawnInterval) {
-                spawnObstacle();
-                spawnTimer = 0;
-                if (spawnInterval > 62) spawnInterval -= 2;
-                if (speed < 9) speed += 0.08;
-            }
-
-            updateObstacles();
-            if (p.style === 'water') {
-                obstacles.forEach(obs => drawSwimObstacle(obs));
+            if (p.style === 'park') {
+                updateSnake();
+                drawSnakeGame(p);
             } else {
-                obstacles.forEach(obs => drawObstacle(obs));
-            }
+                updatePlayer();
+                if (p.style === 'road') updateBikePhase();
 
-            // ── João Carlos ────────────────────────────────────────
-            catSpawnTimer++;
-            if (!catActive && catSpawnTimer > 220 && Math.random() < 0.006) {
-                catActive = true; catX = W + 50; catSpawnTimer = 0;
-            }
-            if (catActive) {
-                catX -= (speed + 3.5);
-                if (catX < 164 && catX + 44 > 100 && !catShield) {
-                    catShield = true; catShieldTimer = 200; catMsgTimer = 130;
-                    catActive = false; playSound('cat');
+                // Spawn logic
+                spawnTimer++;
+                if (spawnTimer >= spawnInterval) {
+                    spawnObstacle();
+                    spawnTimer = 0;
+                    if (spawnInterval > 62) spawnInterval -= 2;
+                    if (speed < 9) speed += 0.08;
                 }
-                if (catX < -60) catActive = false;
+
+                updateObstacles();
+                if (p.style === 'water') {
+                    obstacles.forEach(obs => drawSwimObstacle(obs));
+                } else {
+                    obstacles.forEach(obs => drawObstacle(obs));
+                }
+
+                // ── João Carlos ────────────────────────────────────────────────────
+                catSpawnTimer++;
+                if (!catActive && catSpawnTimer > 220 && Math.random() < 0.006) {
+                    catActive = true; catX = W + 50; catSpawnTimer = 0;
+                }
                 if (catActive) {
-                    ctx.font = '42px serif'; ctx.textAlign = 'center';
-                    ctx.fillText('🐈‍⬛', catX + 22, PLAYER_GROUND + 46);
-                    ctx.textAlign = 'left';
+                    catX -= (speed + 3.5);
+                    if (catX < 164 && catX + 44 > 100 && !catShield) {
+                        catShield = true; catShieldTimer = 200; catMsgTimer = 130;
+                        catActive = false; playSound('cat');
+                    }
+                    if (catX < -60) catActive = false;
+                    if (catActive) {
+                        ctx.font = '42px serif'; ctx.textAlign = 'center';
+                        ctx.fillText('🐈‍⬛', catX + 22, PLAYER_GROUND + 46);
+                        ctx.textAlign = 'left';
+                    }
                 }
-            }
-            if (catShield) { catShieldTimer--; if (catShieldTimer <= 0) catShield = false; }
-            if (catMsgTimer > 0) catMsgTimer--;
-            // ──────────────────────────────────────────────────────
+                if (catShield) { catShieldTimer--; if (catShieldTimer <= 0) catShield = false; }
+                if (catMsgTimer > 0) catMsgTimer--;
+                // ────────────────────────────────────────────────────
 
-            drawPlayer();
+                // ── Meg (runner phases) ──────────────────────────────────
+                megSpawnTimer++;
+                if (!megActive && megSpawnTimer > 300 && Math.random() < 0.004) {
+                    megActive = true; megX = -60; megSpawnTimer = 0;
+                }
+                if (megActive) {
+                    megX += (speed + 2);
+                    if (megX + 38 > 108 && megX < 164 && !catShield) {
+                        isHurt = true; hurtTimer = 30; lives--; playSound('hit');
+                        megMsgTimer = 100; megActive = false;
+                        if (lives <= 0) resetPhase();
+                    }
+                    if (megX > W + 60) megActive = false;
+                    if (megActive) {
+                        const pulse = 0.5 + 0.5 * Math.sin(frame * 0.2);
+                        ctx.save();
+                        ctx.shadowColor = `rgba(230,57,70,${pulse})`;
+                        ctx.shadowBlur = 12;
+                        ctx.font = '38px serif'; ctx.textAlign = 'center';
+                        ctx.fillText('🐈', megX + 19, PLAYER_GROUND + 42);
+                        ctx.restore();
+                        ctx.textAlign = 'left';
+                    }
+                }
+                // ────────────────────────────────────────────────────
+
+                drawPlayer();
+            }
+
             drawHUD();
             if (p.style === 'road') drawBikeHUD();
 
@@ -1195,6 +1441,23 @@
     //  INPUT
     // ============================================================
     document.addEventListener('keydown', e => {
+        const ph = CONFIG.phases[phaseIdx];
+        if (state === STATE.PLAYING && ph && ph.style === 'park') {
+            const snakeDirs = {
+                'ArrowRight': {x:1,y:0},
+                'ArrowLeft':  {x:-1,y:0},
+                'ArrowDown':  {x:0,y:1},
+                'ArrowUp':    {x:0,y:-1}
+            };
+            if (e.code in snakeDirs) {
+                e.preventDefault();
+                const nd = snakeDirs[e.code];
+                if (nd.x !== -snakeDir.x || nd.y !== -snakeDir.y) {
+                    snakeNextDir = nd;
+                }
+                return;
+            }
+        }
         if (e.code === 'Space' || e.code === 'ArrowUp') {
             e.preventDefault();
             handleAction();
