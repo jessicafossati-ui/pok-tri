@@ -1462,6 +1462,10 @@
             e.preventDefault();
             handleAction();
         }
+        // Atalho secreto: N = pular fase (só durante o jogo)
+        if (e.code === 'KeyN' && state === STATE.PLAYING) {
+            completePhase();
+        }
     });
     canvas.addEventListener('click', handleAction);
     canvas.addEventListener('touchstart', e => { e.preventDefault(); handleAction(); }, { passive: false });
